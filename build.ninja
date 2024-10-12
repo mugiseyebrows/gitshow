@@ -1,0 +1,4 @@
+
+rule uic
+    command = pyuic5 $in -x -o $out
+build Ui_MainWindow.py: uic mainwindow.ui
