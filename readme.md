@@ -1,3 +1,3 @@
 # gitshow
 
-![screenshot.png](screenshot)
+![screenshot](screenshot.png)
