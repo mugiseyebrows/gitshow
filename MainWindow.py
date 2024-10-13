@@ -26,7 +26,7 @@ class MainWindow(QtWidgets.QMainWindow):
             w = ui.centralwidget.width()
             h = ui.centralwidget.height()
             ui.verticalSplitter.setSizes([h // 3, h // 7, h // 3])
-            ui.horizontalSplitter.setSizes([w // 2, w // 2])
+            ui.horizontalSplitter.setSizes([w // 3, w * 2 // 3])
 
         QtCore.QTimer.singleShot(0, adjustSplitters)
 
