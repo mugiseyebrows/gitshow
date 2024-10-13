@@ -1,6 +1,5 @@
 from Path import Path
 from collections import defaultdict
-import random
 from Commit import Commit
 import re
 from gitexec import execute
@@ -224,42 +223,67 @@ def get_graph(repo, color_palette = None):
             '#335c67','#2a9d8f','#e09f3e','#9e2a2b','#540b0e'
         ]
 
-    commit_color = defaultdict(lambda: color_palette[0])
-
-    def different_color(colors):
-        color = random.choice(color_palette)
-        while color in colors:
-            color = random.choice(color_palette)
-        return color
+    commit_color = dict()
 
     def is_fork(sha):
         return len(children[sha]) > 1
 
     def is_merge(commit):
         return len(commit.parent) > 1
+    
+    commit_color[commits[-1].sha] = color_palette[0]
+
+    def traverse_for_color(commit):
+        parent = commit
+        while True:
+            if parent.sha in commit_color:
+                return commit_color[parent.sha]
+            if len(parent.parent) > 0:
+                parent = commit_dict[parent.parent[0]]
+            else:
+                # should not happen
+                return '#cccccc'
+
+    def set_parent_colors(commit, color):
+        parent = commit
+        while True:
+            if parent.sha in commit_color:
+                pass
+            else:
+                commit_color[parent.sha] = color
+            if len(parent.parent) > 0:
+                parent = commit_dict[parent.parent[0]]
+            else:
+                return
 
     for commit in reversed(commits):
-        # if parent is fork change color for all but first children
-        if len(commit.parent) == 0:
-            pass
+        if is_fork(commit.sha):
+            parent_color = traverse_for_color(commit)
+            set_parent_colors(commit, parent_color)
+            ix = color_palette.index(parent_color)
+            for i, sha in enumerate(children[commit.sha]):
+                commit_color[sha] = color_palette[(ix + i) % len(color_palette)]
+
+    for commit in reversed(commits):
+        if commit.sha in commit_color:
+            continue
+        if len(commit.parent) > 0:
+            #parent = commit_dict[commit.parent[0]]
+            commit_color[commit.sha] = commit_color[commit.parent[0]]
+
+    for commit in reversed(commits):
+        if commit.sha in commit_color:
+            commit.color = commit_color[commit.sha]
         else:
-            parent_sha = commit.parent[0]
-            if is_fork(parent_sha):
-                ix = children[parent_sha].index(commit.sha)
-                if ix > 0:
-                    commit_color[commit.sha] = different_color([commit_color[parent_sha]])
-                else:
-                    commit_color[commit.sha] = commit_color[parent_sha]
-            else:
-                commit_color[commit.sha] = commit_color[parent_sha]
-        commit.color = commit_color[commit.sha]
+            # should not happen
+            commit.color = '#cccccc'
 
     path: Path
     for path in paths:
         commit = commit_dict[path._commit]
         if is_merge(commit):
-            path._color = commit_color[path._parent]
+            path._color = commit_color.get(path._parent, '#cccccc')
         else:
-            path._color = commit_color[path._commit]
+            path._color = commit_color.get(path._commit, '#cccccc')
 
     return commits, paths
