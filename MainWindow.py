@@ -4,6 +4,7 @@ from CommitGraphWidget import CommitGraphWidget
 import os
 from gitexec import execute
 from gitgraph import get_graph
+import time
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self):
@@ -11,25 +12,37 @@ class MainWindow(QtWidgets.QMainWindow):
         ui = Ui_MainWindow()
         ui.setupUi(self)
         self._ui = ui
-        ui.select.clicked.connect(self.onSelect)
-        ui.repo.textChanged.connect(self.onRepoChanged)
+        self._repo = None
+        ui.openRepository.triggered.connect(self.onOpenRepository)
         ui.save.clicked.connect(self.onSave)
         ui.prevCommit.clicked.connect(self.onPrevCommit)
         ui.nextCommit.clicked.connect(self.onNextCommit)
         graph = CommitGraphWidget()
+        self.graph = graph
+
         ui.commits.setWidget(graph)
         ui.commits.setWidgetResizable(False)
         graph.currentChanged.connect(self.onCommitChanged)
-        self.graph = graph
+        ui.showDate.clicked.connect(self.onShowDate)
+        ui.showTime.clicked.connect(self.onShowTime)
+        ui.showAuthor.clicked.connect(self.onShowAuthor)
 
         def adjustSplitters():
             w = ui.centralwidget.width()
             h = ui.centralwidget.height()
-            ui.verticalSplitter.setSizes([h // 3, h // 7, h // 3])
+            ui.verticalSplitter.setSizes([h // 2, h // 2])
             ui.horizontalSplitter.setSizes([w // 3, w * 2 // 3])
 
         QtCore.QTimer.singleShot(0, adjustSplitters)
 
+    def onShowDate(self, value):
+        self.graph.setShowDate(value)
+
+    def onShowTime(self, value):
+        self.graph.setShowTime(value)
+
+    def onShowAuthor(self, value):
+        self.graph.setShowAuthor(value)
 
     def onPrevCommit(self):
         self.graph.selectPrev()
@@ -37,35 +50,33 @@ class MainWindow(QtWidgets.QMainWindow):
     def onNextCommit(self):
         self.graph.selectNext()
 
-    def onSelect(self):
+    def openRepository(self, path):
+        self._repo = path
+        self.onRepoChanged()
+
+    def onOpenRepository(self):
         path = QtWidgets.QFileDialog.getExistingDirectory()
         if path == "":
             return
-        ui = self._ui
-        ui.repo.setText(QtCore.QDir.toNativeSeparators(path))
-
-    def _repo(self):
-        ui = self._ui
-        repo = ui.repo.text()
-        if os.path.isdir(repo):
-            return repo
+        self.openRepository(path)
 
     def onRepoChanged(self):
-        repo = self._repo()
+        repo = self._repo
         if repo is None:
             return
+        t1 = time.time()
         commits, paths = get_graph(repo)
+        t2 = time.time()
+        print("get_graph took {:.3f} s".format(t2 - t1))
         self.graph.init(commits, paths)
 
     def onCommitChanged(self, commit):
         #print('onCommitChanged', index.data())
-        repo = self._repo()
+        repo = self._repo
         if repo is None:
             return
         
-        lines = execute(['git','show','-s',commit], cwd=repo)
         ui = self._ui
-        ui.commit.setPlainText("\n".join(lines))
 
         def split(line):
             cols = line.split('\t')
@@ -94,7 +105,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ui.files.selectionModel().currentChanged.connect(self.onCurrentFileChanged)
 
     def _file(self, index, binary=False):
-        repo = self._repo()
+        repo = self._repo
         if repo is None:
             return
         ui = self._ui

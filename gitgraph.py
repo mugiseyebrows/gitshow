@@ -3,6 +3,7 @@ from collections import defaultdict
 from Commit import Commit
 import re
 from gitexec import execute
+import datetime
 
 def matrix(value, rows, cols):
     return [[value for x in range(cols)] for y in range(rows)]
@@ -100,56 +101,81 @@ def get_raw_log(repo) -> list[Commit]:
         m = re.match('author (.*) <(.*)> ([0-9]+) ([+-][0-9]+)', line)
         if m:
             commit.author = m.group(1)
+            commit.author_date = datetime.datetime.fromtimestamp(int(m.group(3)))
             continue
         m = re.match('committer (.*) <(.*)> ([0-9]+) ([+-][0-9]+)', line)
         if m:
             commit.committer = m.group(1)
+            commit.committer_date = datetime.datetime.fromtimestamp(int(m.group(3)))
             continue
         m = re.match('gpgsig (.*)', line)
         if m:
             commit.gpgsig.append(m.group(1))
             in_sig = True
             continue
-        commit._message.append(line)
+        commit.message.append(line)
     return commits
 
-def get_graph(repo, color_palette = None):
+def get_graph_geometry(repo) -> list[Commit]:
     lines = execute(['git', 'log', '--graph', '--oneline', '--all'], cwd = repo, octescape=False)
     y = 0
     commits = []
     for line in lines:
         m = re.match('([\\\\/|* ]+)\\s+([0-9a-f]{6,}) (.*)', line)
         if m:
-            sha = m.group(2)
+            sha_short = m.group(2)
             message = m.group(3)
-            commit = Commit(sha)
-            commit._message = message
+            commit = Commit(None, sha_short)
+            commit.message_oneline = message
             commit.y = y
             commit.x = line.index('*') // 2
             commits.append(commit)
             y += 1
+    return commits
+
+def merge_commit_info(commits2: list[Commit], commits: list[Commit], commit_dict: dict[str, Commit]):
+    """
+    commits2 - geometry
+    commits - data
+    """
+
+    sha_size = len(commits2[0].sha_short)
+
+    def shortened(sha):
+        return sha[:sha_size]
+    
+    sha_dict = {shortened(commit.sha): commit.sha for commit in commits}
+
+    for commit in commits:
+        commit.sha_short = shortened(commit.sha)
+    
+    commit: Commit
+    for commit in commits2:
+        dest = commit_dict[sha_dict[commit.sha_short]]
+        dest.x = commit.x
+        dest.y = commit.y
+        dest.message_oneline = commit.message_oneline
+
+    commits.sort(key=lambda commit: commit.y)
+
+def get_graph(repo, color_palette = None):
+    
+    commits2 = get_graph_geometry(repo)
+
+    commits = get_raw_log(repo)
 
     commit_dict = {commit.sha: commit for commit in commits}
 
-    sha_size = len(next(iter(commit_dict.keys())))
-
-    def trimmed(sha):
-        return sha[:sha_size]
-
-    commits2 = get_raw_log(repo)
-    for commit in commits2:
-        sha: str = trimmed(commit.sha)
-        commit_dict[sha].parent = [trimmed(sha) for sha in commit.parent]
-        t = 1
+    merge_commit_info(commits2, commits, commit_dict)    
         
     paths = []
 
-    grid = matrix(False, commits[-1].y + 1, 10)
+    grid = matrix(False, commits[-1].y + 1, 20)
 
     linked = set()
 
-    def is_linked(c1, c2):
-        return (c1.sha, c2.sha) in linked
+    def is_linked(commit, parent):
+        return (commit.sha, parent.sha) in linked
     
     def add_path(commit: Commit, parent: Commit, path: Path):
         if path is None:
@@ -160,8 +186,6 @@ def get_graph(repo, color_palette = None):
         path._commit = commit.sha
         path._parent = parent.sha
         linked.add((commit.sha, parent.sha))
-
-    
 
     for commit in commits:
         grid[commit.y][commit.x] = True
@@ -244,11 +268,16 @@ def get_graph(repo, color_palette = None):
                 # should not happen
                 return '#cccccc'
 
-    def set_parent_colors(commit, color):
-        parent = commit
+    def set_parent_colors(commit: Commit, color: str):
+
+        if len(commit.parent) < 1:
+            print("len(commit.parent) < 1", commit)
+            return
+
+        parent = commit_dict[commit.parent[0]]
         while True:
             if parent.sha in commit_color:
-                pass
+                return
             else:
                 commit_color[parent.sha] = color
             if len(parent.parent) > 0:
@@ -259,6 +288,7 @@ def get_graph(repo, color_palette = None):
     for commit in reversed(commits):
         if is_fork(commit.sha):
             parent_color = traverse_for_color(commit)
+            commit_color[commit.sha] = parent_color
             set_parent_colors(commit, parent_color)
             ix = color_palette.index(parent_color)
             for i, sha in enumerate(children[commit.sha]):

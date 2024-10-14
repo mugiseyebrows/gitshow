@@ -15,7 +15,7 @@ def main():
     args = sys.argv[1:]
     if len(args) == 1:
         path = args[0]
-        mainWindow._ui.repo.setText(path)
+        mainWindow.openRepository(path)
     app.exec_()
 
 def test():
